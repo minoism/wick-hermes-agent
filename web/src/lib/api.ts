@@ -17,6 +17,12 @@ function readBasePath(): string {
 export const HERMES_BASE_PATH = readBasePath();
 const BASE = HERMES_BASE_PATH;
 
+export function buildHermesWebSocketUrl(pathAndQuery: string): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const path = pathAndQuery.startsWith("/") ? pathAndQuery : `/${pathAndQuery}`;
+  return `${proto}//${window.location.host}${BASE}${path}`;
+}
+
 import type { DashboardTheme } from "@/themes/types";
 
 // Ephemeral session token for protected endpoints.

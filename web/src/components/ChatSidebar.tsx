@@ -4,14 +4,14 @@
  *
  * Two WebSockets, one per concern:
  *
- *   1. **JSON-RPC sidecar** (`GatewayClient` → /api/ws) — drives the
+ *   1. **JSON-RPC sidecar** (`GatewayClient` → <dashboard-base>/api/ws) — drives the
  *      sidebar's own slot of the dashboard's in-process gateway.  Owns
  *      the model badge / picker / connection state / error banner.
  *      Independent of the PTY pane's session by design — those are the
  *      pieces the sidebar needs to be able to drive directly (model
  *      switch via slash.exec, etc.).
  *
- *   2. **Event subscriber** (/api/events?channel=…) — passive, receives
+ *   2. **Event subscriber** (<dashboard-base>/api/events?channel=…) — passive, receives
  *      every dispatcher emit from the PTY-side `tui_gateway.entry` that
  *      the dashboard fanned out.  This is how `tool.start/progress/
  *      complete` from the agent loop reach the sidebar even though the
@@ -31,6 +31,7 @@ import { ModelPickerDialog } from "@/components/ModelPickerDialog";
 import { ToolCall, type ToolEntry } from "@/components/ToolCall";
 import { GatewayClient, type ConnectionState } from "@/lib/gatewayClient";
 
+import { buildHermesWebSocketUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AlertCircle, ChevronDown, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -157,10 +158,9 @@ export function ChatSidebar({ channel, className }: ChatSidebarProps) {
       return;
     }
 
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const qs = new URLSearchParams({ token, channel });
     const ws = new WebSocket(
-      `${proto}//${window.location.host}/api/events?${qs.toString()}`,
+      buildHermesWebSocketUrl(`/api/events?${qs.toString()}`),
     );
 
     // `unmounting` suppresses the banner during cleanup — `ws.close()`

@@ -18,6 +18,7 @@ import React, {
   createContext,
 } from "react";
 import { api, fetchJSON } from "@/lib/api";
+import { buildHermesWebSocketUrl, HERMES_BASE_PATH } from "@/lib/api";
 import { cn, timeAgo, isoTimeAgo } from "@/lib/utils";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -120,6 +121,12 @@ export function exposePluginSDK() {
     api,
     // Raw fetchJSON for plugin-specific endpoints
     fetchJSON,
+    basePath: HERMES_BASE_PATH,
+    buildApiUrl: (path: string) => {
+      const normalized = path.startsWith("/") ? path : `/${path}`;
+      return `${HERMES_BASE_PATH}${normalized}`;
+    },
+    buildWebSocketUrl: buildHermesWebSocketUrl,
 
     // UI components (shadcn/ui primitives)
     components: {

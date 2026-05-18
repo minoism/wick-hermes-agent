@@ -2,7 +2,8 @@
  * Hermes Kanban — Dashboard Plugin
  *
  * Board view for the multi-agent collaboration board backed by
- * ~/.hermes/kanban.db. Calls the plugin's backend at /api/plugins/kanban/
+ * ~/.hermes/kanban.db. Calls the plugin's backend at the dashboard-scoped
+ * /api/plugins/kanban/ path.
  * and tails task_events over a WebSocket for live updates.
  *
  * Plain IIFE, no build step. Uses window.__HERMES_PLUGIN_SDK__ for React +
@@ -152,6 +153,10 @@
   }
 
   const API = "/api/plugins/kanban";
+  const wsUrl = SDK.buildWebSocketUrl || function (path) {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}${path}`;
+  };
   const MIME_TASK = "text/x-hermes-task";
 
   // Docs link — surfaced as a `?` icon next to the board switcher and as
@@ -533,7 +538,6 @@
       function openWs() {
         if (wsClosedRef.current) return;
         const token = window.__HERMES_SESSION_TOKEN__ || "";
-        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
         const qsParams = {
           since: String(cursorRef.current || 0),
           token: token,
@@ -545,7 +549,7 @@
         // Regression: #20879.
         if (board) qsParams.board = board;
         const qs = new URLSearchParams(qsParams);
-        const url = `${proto}//${window.location.host}${API}/events?${qs}`;
+        const url = wsUrl(`${API}/events?${qs}`);
         let ws;
         try { ws = new WebSocket(url); } catch (_e) { return; }
         wsRef.current = ws;

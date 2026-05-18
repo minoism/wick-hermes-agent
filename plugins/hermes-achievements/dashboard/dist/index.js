@@ -49,7 +49,8 @@
   };
 
   async function api(path, options) {
-    const url = "/api/plugins/hermes-achievements" + path;
+    const rawUrl = "/api/plugins/hermes-achievements" + path;
+    const url = SDK.buildApiUrl ? SDK.buildApiUrl(rawUrl) : rawUrl;
     const token = window.__HERMES_SESSION_TOKEN__ || "";
     const headers = { ...((options && options.headers) || {}) };
     if (token) headers["X-Hermes-Session-Token"] = token;
