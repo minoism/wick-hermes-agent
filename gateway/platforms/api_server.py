@@ -695,6 +695,18 @@ class APIServerAdapter(BasePlatformAdapter):
             pass
         return "hermes-agent"
 
+    def _current_agent_model_name(self) -> str:
+        """Return the model that a run will use when no per-run override is set."""
+        try:
+            from gateway.run import _resolve_gateway_model
+
+            model = _resolve_gateway_model()
+            if model:
+                return str(model)
+        except Exception:
+            pass
+        return self._model_name
+
     def _cors_headers_for_origin(self, origin: str) -> Optional[Dict[str, str]]:
         """Return CORS headers for an allowed browser origin."""
         if not origin or not self._cors_origins:
@@ -2992,7 +3004,8 @@ class APIServerAdapter(BasePlatformAdapter):
             "queued",
             created_at=created_at,
             session_id=session_id,
-            model=model_override or self._model_name,
+            model=model_override or self._current_agent_model_name(),
+            reasoning_effort=reasoning_effort_override,
         )
 
         async def _run_and_close():

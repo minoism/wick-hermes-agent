@@ -619,6 +619,12 @@ class TestModelsEndpoint:
         with patch("hermes_cli.profiles.get_active_profile_name", return_value="lucas"):
             assert APIServerAdapter._resolve_model_name("") == "lucas"
 
+    def test_current_agent_model_name_uses_gateway_model(self, monkeypatch):
+        monkeypatch.setattr("gateway.run._resolve_gateway_model", lambda: "gpt-5.5")
+        adapter = APIServerAdapter(PlatformConfig(enabled=True))
+
+        assert adapter._current_agent_model_name() == "gpt-5.5"
+
     @pytest.mark.asyncio
     async def test_models_requires_auth(self, auth_adapter):
         app = _create_app(auth_adapter)
