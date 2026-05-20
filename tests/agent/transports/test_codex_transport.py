@@ -91,6 +91,22 @@ class TestCodexBuildKwargs:
         )
         assert kw.get("prompt_cache_key") == "test-session-123"
 
+    def test_long_session_id_uses_short_stable_cache_key(self, transport):
+        messages = [{"role": "user", "content": "Hi"}]
+        session_id = "agent:main:api_server:" + ("wick-wake-" * 12)
+        kw = transport.build_kwargs(
+            model="gpt-5.4",
+            messages=messages,
+            tools=[],
+            session_id=session_id,
+            is_codex_backend=True,
+        )
+        cache_key = kw.get("prompt_cache_key")
+        assert isinstance(cache_key, str)
+        assert cache_key.startswith("pcache-")
+        assert len(cache_key) <= 64
+        assert kw.get("extra_headers", {}).get("session_id") == cache_key
+
     def test_github_responses_no_cache_key(self, transport):
         messages = [{"role": "user", "content": "Hi"}]
         kw = transport.build_kwargs(

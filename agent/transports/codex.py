@@ -5,6 +5,7 @@ This transport owns format conversion and normalization — NOT client lifecycle
 streaming, or the _run_codex_stream() call path.
 """
 
+import hashlib
 from typing import Any, Dict, List, Optional
 
 from agent.transports.base import ProviderTransport
@@ -108,10 +109,11 @@ class ResponsesApiTransport(ProviderTransport):
             kwargs["parallel_tool_calls"] = True
 
         session_id = params.get("session_id")
+        prompt_cache_key = _prompt_cache_key(session_id)
         # xAI Responses takes prompt_cache_key in extra_body (set further
         # down); GitHub Models opts out of cache-key routing entirely.
-        if not is_github_responses and not is_xai_responses and session_id:
-            kwargs["prompt_cache_key"] = session_id
+        if not is_github_responses and not is_xai_responses and prompt_cache_key:
+            kwargs["prompt_cache_key"] = prompt_cache_key
 
         if reasoning_enabled and is_xai_responses:
             from agent.model_metadata import grok_supports_reasoning_effort
@@ -147,8 +149,7 @@ class ResponsesApiTransport(ProviderTransport):
             kwargs.update(request_overrides)
 
         if is_codex_backend:
-            prompt_cache_key = kwargs.get("prompt_cache_key")
-            cache_scope_id = str(prompt_cache_key or session_id or "").strip()
+            cache_scope_id = str(kwargs.get("prompt_cache_key") or prompt_cache_key or "").strip()
             if cache_scope_id:
                 existing_extra_headers = kwargs.get("extra_headers")
                 merged_extra_headers: Dict[str, str] = {}
@@ -179,7 +180,7 @@ class ResponsesApiTransport(ProviderTransport):
                         if key and value is not None
                     }
                 )
-            merged_extra_headers["x-grok-conv-id"] = session_id
+            merged_extra_headers["x-grok-conv-id"] = prompt_cache_key or str(session_id)
             kwargs["extra_headers"] = merged_extra_headers
 
             # xAI Responses cache-routing — body-level field per
@@ -190,7 +191,7 @@ class ResponsesApiTransport(ProviderTransport):
             merged_extra_body: Dict[str, Any] = {}
             if isinstance(existing_extra_body, dict):
                 merged_extra_body.update(existing_extra_body)
-            merged_extra_body.setdefault("prompt_cache_key", session_id)
+            merged_extra_body.setdefault("prompt_cache_key", prompt_cache_key or str(session_id))
             kwargs["extra_body"] = merged_extra_body
 
         return kwargs
@@ -275,6 +276,18 @@ class ResponsesApiTransport(ProviderTransport):
             "cancelled": "stop",
         }
         return _MAP.get(raw_reason, "stop")
+
+
+def _prompt_cache_key(session_id: Any) -> str | None:
+    """Return a provider-safe prompt cache key."""
+    if session_id is None:
+        return None
+    value = str(session_id).strip()
+    if not value:
+        return None
+    if len(value) <= 64:
+        return value
+    return f"pcache-{hashlib.sha256(value.encode('utf-8')).hexdigest()[:57]}"
 
 
 # Auto-register on import
