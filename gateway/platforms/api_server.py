@@ -61,6 +61,7 @@ MAX_REQUEST_BYTES = 10_000_000  # 10 MB — accommodates long agent conversation
 CHAT_COMPLETIONS_SSE_KEEPALIVE_SECONDS = 30.0
 MAX_NORMALIZED_TEXT_LENGTH = 65_536  # 64 KB cap for normalized content parts
 MAX_CONTENT_LIST_SIZE = 1_000  # Max items when content is an array
+RUN_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh"})
 
 
 def _coerce_port(value: Any, default: int = DEFAULT_PORT) -> int:
@@ -69,6 +70,29 @@ def _coerce_port(value: Any, default: int = DEFAULT_PORT) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _normalize_optional_string(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _normalize_optional_string_list(value: Any) -> Optional[List[str]]:
+    if value is None:
+        return None
+    raw_items = [value] if isinstance(value, str) else value
+    if not isinstance(raw_items, list):
+        return None
+    normalized = []
+    for item in raw_items:
+        if not isinstance(item, str):
+            continue
+        stripped = item.strip()
+        if stripped:
+            normalized.append(stripped)
+    return normalized or None
 
 
 def _normalize_chat_content(
@@ -823,6 +847,10 @@ class APIServerAdapter(BasePlatformAdapter):
         tool_start_callback=None,
         tool_complete_callback=None,
         gateway_session_key: Optional[str] = None,
+        model_override: Optional[str] = None,
+        reasoning_effort_override: Optional[str] = None,
+        enabled_toolsets_override: Optional[List[str]] = None,
+        disabled_toolsets_override: Optional[List[str]] = None,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -845,10 +873,18 @@ class APIServerAdapter(BasePlatformAdapter):
 
         runtime_kwargs = _resolve_runtime_agent_kwargs()
         reasoning_config = GatewayRunner._load_reasoning_config()
-        model = _resolve_gateway_model()
+        model = model_override or _resolve_gateway_model()
 
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+        if enabled_toolsets_override is not None:
+            enabled_toolsets = enabled_toolsets_override
+        if reasoning_effort_override is not None:
+            from hermes_constants import parse_reasoning_effort
+            parsed_reasoning = parse_reasoning_effort(reasoning_effort_override)
+            if parsed_reasoning is not None:
+                reasoning_config = parsed_reasoning
+        disabled_toolsets = disabled_toolsets_override
 
         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
 
@@ -864,6 +900,7 @@ class APIServerAdapter(BasePlatformAdapter):
             verbose_logging=False,
             ephemeral_system_prompt=ephemeral_system_prompt or None,
             enabled_toolsets=enabled_toolsets,
+            disabled_toolsets=disabled_toolsets,
             session_id=session_id,
             platform="api_server",
             stream_delta_callback=stream_delta_callback,
@@ -2907,6 +2944,26 @@ class APIServerAdapter(BasePlatformAdapter):
         session_id = body.get("session_id") or stored_session_id or run_id
         approval_session_key = gateway_session_key or session_id or run_id
         ephemeral_system_prompt = instructions
+        model_override = _normalize_optional_string(body.get("model"))
+        reasoning_effort_override = _normalize_optional_string(body.get("reasoning_effort"))
+        if (
+            reasoning_effort_override is not None
+            and reasoning_effort_override.lower() not in RUN_REASONING_EFFORTS
+        ):
+            return web.json_response(
+                _openai_error(
+                    "Invalid 'reasoning_effort'. Expected one of: none, low, medium, high, xhigh"
+                ),
+                status=400,
+            )
+        if reasoning_effort_override is not None:
+            reasoning_effort_override = reasoning_effort_override.lower()
+        enabled_toolsets_override = _normalize_optional_string_list(
+            body.get("enabled_toolsets", body.get("toolsets"))
+        )
+        disabled_toolsets_override = _normalize_optional_string_list(
+            body.get("disabled_toolsets")
+        )
         loop = asyncio.get_running_loop()
         q: "asyncio.Queue[Optional[Dict]]" = asyncio.Queue()
         created_at = time.time()
@@ -2935,7 +2992,7 @@ class APIServerAdapter(BasePlatformAdapter):
             "queued",
             created_at=created_at,
             session_id=session_id,
-            model=body.get("model", self._model_name),
+            model=model_override or self._model_name,
         )
 
         async def _run_and_close():
@@ -2947,6 +3004,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     stream_delta_callback=_text_cb,
                     tool_progress_callback=event_cb,
                     gateway_session_key=gateway_session_key,
+                    model_override=model_override,
+                    reasoning_effort_override=reasoning_effort_override,
+                    enabled_toolsets_override=enabled_toolsets_override,
+                    disabled_toolsets_override=disabled_toolsets_override,
                 )
                 self._active_run_agents[run_id] = agent
 
